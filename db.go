@@ -19,9 +19,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
-	"regexp"
 
 	"github.com/howeyc/fsnotify"
 	"github.com/oschwald/maxminddb-golang"
@@ -202,38 +202,46 @@ func (db *DB) newReader(dbfile string) (*maxminddb.Reader, string, error) {
 	}
 	defer f.Close()
 
-	gzf, err := gzip.NewReader(f)
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer gzf.Close()
+	gz, err := gzip.NewReader(f)
 
-	tr := tar.NewReader(gzf)
+	if err != nil {
+		return nil, "", err
+	}
+
+	defer gz.Close()
+
+	t := tar.NewReader(gz)
+
 	for {
-		hdr, err := tr.Next()
+		hdr, err := t.Next()
+
 		if err == io.EOF {
-			break // End of archive
+			break
 		}
+
 		if err != nil {
 			return nil, "", err
 		}
 
 		filename, err := regexp.MatchString(MaxMindFileName, hdr.Name)
+
 		if err != nil {
-			fmt.Printf("filename not match: %s:%v", hdr.Name, err)
-			break;
+			return nil, "", err
 		}
-		
+
 		if filename {
-			b, err := ioutil.ReadAll(tr)
+			b, err := ioutil.ReadAll(t)
+
 			if err != nil {
 				return nil, "", err
 			}
+
 			checksum := fmt.Sprintf("%x", md5.Sum(b))
 			mmdb, err := maxminddb.FromBytes(b)
 			return mmdb, checksum, err
 		}
 	}
+
 	return nil, "", err
 }
 
